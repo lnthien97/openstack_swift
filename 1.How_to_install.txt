@@ -1,0 +1,707 @@
+----thienln-----
+----lnthien97@gmail.com----
+
+
+# Server list 
+nginx (optional)
+keystone : 10.10.10.180
+swift-proxy : 10.10.10.181
+swift-storage : 10.10.10.182, 10.10.10.183
+
+------ Installation ------------
+
+#####################
+## Setup Keystone  ##
+#####################
+
+Server name : lab-keystone-180
+Memory : 4GB 
+Disk Space : 16GB
+CPUs: 2
+IP Address : 10.10.10.180
+OS: Ubuntu 22.04 LTS
+
+
+1. Setup database
+
+### Install mariadb-server 
+apt update 
+apt install mariadb-server
+mysql_secure_installation
+
+### Configure mariadb 
+cd /etc/mysql
+grep -rn ./* -ie "utf8"
+=> 
+    ./mariadb.conf.d/50-server.cnf:89:# utf8 4-byte character set. See also client.cnf
+    ./mariadb.conf.d/50-server.cnf:90:character-set-server  = utf8mb4
+    ./mariadb.conf.d/50-server.cnf:91:collation-server      = utf8mb4_general_ci
+
+sed -i 's/utf8mb4/utf8/g' ./mariadb.conf.d/50-server.cnf
+
+grep -rn ./* -ie "utf8"
+=>  ./mariadb.conf.d/50-server.cnf:89:# utf8 4-byte character set. See also client.cnf
+    ./mariadb.conf.d/50-server.cnf:90:character-set-server  = utf8
+    ./mariadb.conf.d/50-server.cnf:91:collation-server      = utf8_general_ci
+
+
+### Edit /etc/mysql/mariadb.conf.d/50-server.cnf
+[mysqld]
+bind-address            = 10.10.10.180
+
+### Restart mysql 
+systemctl restart mysql
+
+
+### Create keystone database 
+mysql -u root -p
+MariaDB [(none)]> create database keystone;  
+MariaDB [(none)]> grant all privileges on keystone.* to 'keystone'@'localhost' identified by "thienln_keystone_password";  
+MariaDB [(none)]> grant all privileges on keystone.* to 'keystone'@'%' identified by "thienln_keystone_password";  
+quit
+
+### Install keystone 
+apt -y install keystone python3-openstackclient apache2 libapache2-mod-wsgi-py3 python3-oauth2client
+
+### edit /etc/keystone/keystone.conf 
+
+[database]
+connection = mysql+pymysql://keystone:thienln_keystone_password@10.10.10.180/keystone
+
+[token]  
+provider = fernet  
+
+
+### sync database 
+keystone-manage db_sync
+=> root@test-keystone-98:# tail -10 /var/log/keystone/keystone-manage.log
+    2023-12-15 03:23:00.323 7852 INFO migrate.versioning.api [-] 74 -> 75...
+    2023-12-15 03:23:00.326 7852 INFO migrate.versioning.api [-] done
+    2023-12-15 03:23:00.326 7852 INFO migrate.versioning.api [-] 75 -> 76...
+    2023-12-15 03:23:00.328 7852 INFO migrate.versioning.api [-] done
+    2023-12-15 03:23:00.329 7852 INFO migrate.versioning.api [-] 76 -> 77...
+    2023-12-15 03:23:00.331 7852 INFO migrate.versioning.api [-] done
+    2023-12-15 03:23:00.331 7852 INFO migrate.versioning.api [-] 77 -> 78...
+    2023-12-15 03:23:00.334 7852 INFO migrate.versioning.api [-] done
+    2023-12-15 03:23:00.334 7852 INFO migrate.versioning.api [-] 78 -> 79...
+    2023-12-15 03:23:00.337 7852 INFO migrate.versioning.api [-] done
+
+
+
+### initialize fernet keys and credential keys (Only one key for all keystone servers)
+cd /etc/keystone    
+keystone-manage fernet_setup --keystone-user keystone --keystone-group keystone   
+keystone-manage credential_setup --keystone-user keystone --keystone-group keystone 
+
+### Bootstrap identity services  
+keystone-manage bootstrap --bootstrap-password 83c0cadd9c3dbce7eeec3e527b4dec02 \
+    --bootstrap-admin-url http://10.10.10.180:5000/v3 \
+    --bootstrap-internal-url http://10.10.10.180:5000/v3  \
+    --bootstrap-public-url http://10.10.10.180:5000/v3 \
+    --bootstrap-region-id LAB01
+
+### Restart keystone   
+rm -f /var/lib/keystone/keystone.db   
+systemctl restart apache2  
+
+### create  admin.rc file 
+export OS_USERNAME=admin 
+export OS_PASSWORD=83c0cadd9c3dbce7eeec3e527b4dec02 
+export OS_PROJECT_NAME=admin 
+export OS_USER_DOMAIN_NAME=default 
+export OS_PROJECT_DOMAIN_NAME=default 
+export OS_AUTH_URL=http://10.10.10.180:5000/v3 
+export OS_IDENTITY_API_VERSION=3 
+
+### Create user swift 
+openstack user create --domain default --password 440b3948f04a7ddc2b70 swift
++---------------------+----------------------------------+
+| Field               | Value                            |
++---------------------+----------------------------------+
+| domain_id           | default                          |
+| enabled             | True                             |
+| id                  | 37aa5af7e44f47678b76a7873d1ac9e3 |
+| name                | swift                            |
+| options             | {}                               |
+| password_expires_at | None                             |
++---------------------+----------------------------------+
+
+openstack project create service  
++-------------+----------------------------------+
+| Field       | Value                            |
++-------------+----------------------------------+
+| description |                                  |
+| domain_id   | default                          |
+| enabled     | True                             |
+| id          | f0c5f1a7121e4937a13b48632f5f0fad |
+| is_domain   | False                            |
+| name        | service                          |
+| options     | {}                               |
+| parent_id   | default                          |
+| tags        | []                               |
++-------------+----------------------------------+
+
+
+openstack role add --project service --user swift admin
+
+
+openstack service create --name swift --description "OpenStack Object Storage" object-store 
++-------------+----------------------------------+
+| Field       | Value                            |
++-------------+----------------------------------+
+| description | OpenStack Object Storage         |
+| enabled     | True                             |
+| id          | e50d1680f0284477a5a323475956ca2e |
+| name        | swift                            |
+| type        | object-store                     |
++-------------+----------------------------------+
+
+openstack endpoint create --region LAB01 object-store public http://10.10.10.181:8080/v1/AUTH_%\(project_id\)s 
+openstack endpoint create --region LAB01 object-store internal http://10.10.10.181:8080/v1/AUTH_%\(project_id\)s
+openstack endpoint create --region LAB01 object-store admin http://10.10.10.181:8080/v1
+
+
+root@lab-keystone-180:/etc/keystone# openstack endpoint list
++----------------------------------+--------+--------------+--------------+---------+-----------+------------------------------------------------+
+| ID                               | Region | Service Name | Service Type | Enabled | Interface | URL                                            |
++----------------------------------+--------+--------------+--------------+---------+-----------+------------------------------------------------+
+| 078f728885174123993ee9f284ccc894 | LAB01  | keystone     | identity     | True    | internal  | http://10.10.10.180:5000/v3                     |
+| 0ad08d066eec4c0b83c9f439e65d338a | LAB01  | swift        | object-store | True    | public    | http://10.10.10.181:8080/v1/AUTH_%(project_id)s |
+| 845e24f3cb4042f9aae332abcab10785 | LAB01  | keystone     | identity     | True    | admin     | http://10.10.10.180:5000/v3                     |
+| 93934d8063e2438c932cc7a06cc74ed0 | LAB01  | swift        | object-store | True    | internal  | http://10.10.10.181:8080/v1/AUTH_%(project_id)s |
+| ade84b157c884a99b78eefac8b0f1ef0 | LAB01  | swift        | object-store | True    | admin     | http://10.10.10.181:8080/v1                     |
+| ffd6aae5d914499e8f3781eeb0ef73cf | LAB01  | keystone     | identity     | True    | public    | http://10.10.10.180:5000/v3                     |
++----------------------------------+--------+--------------+--------------+---------+-----------+------------------------------------------------+
+
+
+(update endpoint url later)
+
+------------------------------
+
+########################
+## Setup Swift proxy ###
+########################
+Server Name : lab-swift-proxy-181
+Memory : 4GB 
+Disk Space : 16GB
+CPUs: 2
+IP Address : 10.10.10.181
+
+root@lab-swift-proxy-181:/etc/swift# lsb_release -a
+No LSB modules are available.
+Distributor ID:	Ubuntu
+Description:	Ubuntu 22.04.1 LTS
+Release:	22.04
+Codename:	jammy
+
+apt update 
+apt install wget  \
+    build-essential  \
+    checkinstall  \
+    libncursesw5-dev  \
+    libssl-dev \
+    libsqlite3-dev  \
+    tk-dev  \
+    libgdbm-dev  \
+    libc6-dev  \
+    libbz2-dev  \
+    libffi-dev  \
+    zlib1g-dev \
+    liberasurecode-dev -y
+
+### Setup python3.9
+
+cd /opt 
+wget https://www.python.org/ftp/python/3.9.6/Python-3.9.6.tgz 
+tar xzf Python-3.9.6.tgz  
+cd Python-3.9.6 
+./configure --enable-optimizations  
+make altinstall
+
+### setup pip3.9 
+cd /opt
+curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py 
+python3.9 get-pip.py 
+rm get-pip.py
+
+
+### 
+mkdir /etc/swift
+mkdir /var/log/swift
+chown -R syslog:adm /var/log/swift
+
+
+###
+apt install attr \
+     liberasurecode1  \
+     memcached \
+     python3-swiftclient \
+     python3-keystoneclient \
+     rsyslog \
+     rsync \
+     liberasurecode-dev -y
+
+###
+cd /opt 
+git clone -b 2.30.1 https://github.com/openstack/swift.git
+cd /opt/swift 
+pip3.9 install -r requirements.txt 
+pip3.9 install keystonemiddleware
+python3.9 setup.py install
+
+
+### config swift proxy 
+
+root@lab-swift-proxy-181:/etc/swift# tree
+.
+├── memcache.conf
+├── proxy-server.conf
+└── swift.conf
+
+
+#### memcache.conf 
+[memcache]
+memcache_servers = 127.0.0.1:11211
+
+#### swift.conf 
+[swift-hash]
+swift_hash_path_suffix = 37174c887da2f8f0a78c130a
+swift_hash_path_prefix = eb91e895dcae442fe2d2caff
+[storage-policy:0]
+name = gold
+default = yes
+policy_type = replication
+[swift-constraints]
+
+
+#### proxy-server.conf 
+...
+[pipeline:main]
+pipeline = catch_errors gatekeeper healthcheck proxy-logging cache listing_formats container_sync bulk tempurl ratelimit authtoken  keystoneauth  copy container-quotas account-quotas slo dlo versioned_writes symlink proxy-logging proxy-server
+...
+allow_account_management = true
+account_autocreate = true
+...
+[filter:authtoken]
+paste.filter_factory = keystonemiddleware.auth_token:filter_factory
+www_authenticate_uri = http://10.237.7.180:5000
+auth_url = http://10.237.7.180:5000
+auth_plugin = password
+project_domain_id = default
+user_domain_id = default
+project_name = service
+username = swift
+password = 440b3948f04a7ddc2b70
+delay_auth_decision = True
+...
+[filter:keystoneauth]
+use = egg:swift#keystoneauth
+...
+
+
+###############################
+## Setup Swift Storage Node ###
+###############################
+
+apt update 
+apt install wget  \
+    build-essential  \
+    checkinstall  \
+    libncursesw5-dev  \
+    libssl-dev \
+    libsqlite3-dev  \
+    tk-dev  \
+    libgdbm-dev  \
+    libc6-dev  \
+    libbz2-dev  \
+    libffi-dev  \
+    zlib1g-dev \
+    liberasurecode-dev -y
+
+apt install attr \
+      liberasurecode1  \
+      memcached \
+      python3-swiftclient \
+      python3-keystoneclient \
+      rsyslog \
+      rsync \
+      liberasurecode-dev \
+      xfsprogs -y
+
+### Setup python3.9
+
+cd /opt 
+wget https://www.python.org/ftp/python/3.9.6/Python-3.9.6.tgz 
+tar xzf Python-3.9.6.tgz  
+cd Python-3.9.6 
+./configure --enable-optimizations  
+make altinstall
+
+### setup pip3.9 
+cd /opt
+curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py 
+python3.9 get-pip.py 
+rm get-pip.py
+
+###
+mkdir /etc/swift
+mkdir /var/log/swift
+chown -R syslog:adm /var/log/swift
+
+###
+cd /opt 
+git clone -b 2.30.1 https://github.com/openstack/swift.git
+cd /opt/swift 
+pip3.9 install -r requirements.txt 
+pip3.9 install keystonemiddleware
+python3.9 setup.py install
+
+
+### configure swift-node 
+root@lab-swift-node-183:/etc/swift# tree ./
+./
+├── account-server.conf
+├── container-reconciler.conf
+├── container-server.conf
+├── drive-audit.conf
+├── internal-client.conf
+├── object-expirer.conf
+├── object-server.conf
+└── swift.conf
+
+#### swift.conf 
+[swift-hash]
+swift_hash_path_suffix = 37174c887da2f8f0a78c130a
+swift_hash_path_prefix = eb91e895dcae442fe2d2caff
+[storage-policy:0]
+name = gold
+default = yes
+policy_type = replication
+[swift-constraints]
+
+#### account-server.conf 
+[DEFAULT]
+bind_ip = 10.237.7.182
+bind_port = 6102
+...
+
+#### container-server.conf 
+[DEFAULT]
+bind_ip = 10.237.7.182
+bind_port = 6101
+...
+
+#### object-server.conf 
+[DEFAULT]
+bind_ip = 10.237.7.182
+bind_port = 6100
+...
+
+
+### Create ring files 
+#### In swift proxy 10.10.10.181
+#### Create ring files     
+swift-ring-builder account.builder create 8 2 1  
+swift-ring-builder container.builder create 8 2 1  
+swift-ring-builder object.builder create 8 2 1   
+
+#### Add devices into account ring 
+swift-ring-builder account.builder add r1z1-10.10.10.182:6102/device1 100  
+swift-ring-builder account.builder add r1z1-10.10.10.182:6102/device2 100  
+swift-ring-builder account.builder add r1z1-10.10.10.182:6102/device3 100  
+
+swift-ring-builder account.builder add r1z1-10.10.10.183:6102/device1 100  
+swift-ring-builder account.builder add r1z1-10.10.10.183:6102/device2 100  
+swift-ring-builder account.builder add r1z1-10.10.10.183:6102/device3 100  
+   
+#### Add devices into container ring  
+swift-ring-builder container.builder add r1z1-10.10.10.182:6101/device1 100  
+swift-ring-builder container.builder add r1z1-10.10.10.182:6101/device2 100  
+swift-ring-builder container.builder add r1z1-10.10.10.182:6101/device3 100  
+
+swift-ring-builder container.builder add r1z1-10.10.10.183:6101/device1 100  
+swift-ring-builder container.builder add r1z1-10.10.10.183:6101/device2 100  
+swift-ring-builder container.builder add r1z1-10.10.10.183:6101/device3 100  
+   
+#### Add devices intor object ring 
+swift-ring-builder object.builder add r1z1-10.10.10.182:6100/device1 100  
+swift-ring-builder object.builder add r1z1-10.10.10.182:6100/device2 100  
+swift-ring-builder object.builder add r1z1-10.10.10.182:6100/device3 100  
+
+swift-ring-builder object.builder add r1z1-10.10.10.183:6100/device1 100  
+swift-ring-builder object.builder add r1z1-10.10.10.183:6100/device2 100  
+swift-ring-builder object.builder add r1z1-10.10.10.183:6100/device3 100  
+     
+# Rebalance all ring files 
+swift-ring-builder account.builder rebalance  
+swift-ring-builder container.builder rebalance  
+swift-ring-builder object.builder rebalance  
+
+
+# !! 
+### Copy *.ring.gz files to all swift-proxy and swift-storage servers 
+scp /etc/swift/*.gz 10.10.10.182:/etc/swift/
+scp /etc/swift/*.gz 10.10.10.183:/etc/swift/
+
+
+### In swift-storage servers 
+root@lab-swift-node-183:/etc/swift# lsblk
+NAME                      MAJ:MIN RM  SIZE RO TYPE MOUNTPOINTS
+loop0                       7:0    0 61.9M  1 loop /snap/core20/1405
+loop1                       7:1    0 44.7M  1 loop /snap/snapd/15534
+loop2                       7:2    0 79.9M  1 loop /snap/lxd/22923
+sda                         8:0    0   16G  0 disk
+├─sda1                      8:1    0    1M  0 part
+├─sda2                      8:2    0  1.8G  0 part /boot
+└─sda3                      8:3    0 14.2G  0 part
+  └─ubuntu--vg-ubuntu--lv 253:0    0 14.2G  0 lvm  /
+sdb                         8:16   0   16G  0 disk
+sdc                         8:32   0   16G  0 disk
+sdd                         8:48   0   16G  0 disk
+
+
+# setup data devices 
+root@lab-swift-node-183:~# parted /dev/sdb
+GNU Parted 3.4
+Using /dev/sdb
+Welcome to GNU Parted! Type 'help' to view a list of commands.
+(parted) mklabel gpt
+(parted) mkpart
+Partition name?  []?
+File system type?  [ext2]? xfs
+Start? 0%
+End? 100%
+(parted) print
+Model: VMware Virtual disk (scsi)
+Disk /dev/sdb: 17.2GB
+Sector size (logical/physical): 512B/512B
+Partition Table: gpt
+Disk Flags:
+
+Number  Start   End     Size    File system  Name  Flags
+ 1      1049kB  17.2GB  17.2GB  xfs
+
+(parted) quit
+
+
+# do the same thing to other devices 
+root@lab-swift-node-183:~# lsblk
+sdb                         8:16   0   16G  0 disk
+└─sdb1                      8:17   0   16G  0 part
+sdc                         8:32   0   16G  0 disk
+└─sdc1                      8:33   0   16G  0 part
+sdd                         8:48   0   16G  0 disk
+└─sdd1                      8:49   0   16G  0 part
+
+
+root@lab-swift-node-183:~# mkfs.xfs /dev/sdb1
+meta-data=/dev/sdb1              isize=512    agcount=4, agsize=1048448 blks
+         =                       sectsz=512   attr=2, projid32bit=1
+         =                       crc=1        finobt=1, sparse=1, rmapbt=0
+         =                       reflink=1    bigtime=0 inobtcount=0
+data     =                       bsize=4096   blocks=4193792, imaxpct=25
+         =                       sunit=0      swidth=0 blks
+naming   =version 2              bsize=4096   ascii-ci=0, ftype=1
+log      =internal log           bsize=4096   blocks=2560, version=2
+         =                       sectsz=512   sunit=0 blks, lazy-count=1
+realtime =none                   extsz=4096   blocks=0, rtextents=0
+root@lab-swift-node-183:~# mkfs.xfs /dev/sdc1
+root@lab-swift-node-183:~# mkfs.xfs /dev/sdd1
+
+root@lab-swift-storage-183:~# blkid
+/dev/sdd1: UUID="2a4a15d4-0a19-4b46-8daa-6361eb2b5100" BLOCK_SIZE="512" TYPE="xfs" PARTUUID="6b486f0d-764c-4fa1-bfd9-ee6182230905"
+/dev/sdb1: UUID="a5b30089-42bf-492d-aecd-b145b32cd69f" BLOCK_SIZE="512" TYPE="xfs" PARTUUID="5f153ed4-406d-4aa7-aae2-d6d52687d15f"
+/dev/sdc1: UUID="33873a3e-cc31-4e41-8f50-397ee60ab235" BLOCK_SIZE="512" TYPE="xfs" PARTUUID="05a666f9-a7d0-4396-ad06-f5f7cea6d451"
+
+
+#### /etc/fstab 
+UUID=a5b30089-42bf-492d-aecd-b145b32cd69f /srv/node/device1 xfs noatime,nodiratime,logbufs=8 0 2
+UUID=33873a3e-cc31-4e41-8f50-397ee60ab235 /srv/node/device2 xfs noatime,nodiratime,logbufs=8 0 2
+UUID=2a4a15d4-0a19-4b46-8daa-6361eb2b5100 /srv/node/device3 xfs noatime,nodiratime,logbufs=8 0 2
+
+
+#### create data folders
+mkdir -p /srv/node/device1
+mkdir -p /srv/node/device2
+mkdir -p /srv/node/device3
+
+useradd swift 
+chown -R swift:swift /srv/node 
+
+#### mount all devices 
+mount -a 
+
+# 
+root@lab-swift-node-183:/srv/node# lsblk
+sdb                         8:16   0   16G  0 disk
+└─sdb1                      8:17   0   16G  0 part /srv/node/device1
+sdc                         8:32   0   16G  0 disk
+└─sdc1                      8:33   0   16G  0 part /srv/node/device2
+sdd                         8:48   0   16G  0 disk
+└─sdd1                      8:49   0   16G  0 part /srv/node/device3
+
+### Do the samething in storage node 10.10.10.182 
+
+
+### Config logs 
+mkdir /var/log/swift 
+chown -R syslog:adm /var/log/swift 
+
+### /etc/rsyslog.conf
+...
+$IncludeConfig /etc/rsyslog.d/*.conf
+
+### /etc/rsyslog.d/10-swift.conf 
+# Uncomment the following to have specific log via program name.
+if $programname == 'swift' then /var/log/swift/swift.log
+if $programname == 'account-server' then /var/log/swift/account-server.log
+if $programname == 'account-replicator' then /var/log/swift/account-replicator.log
+if $programname == 'account-auditor' then /var/log/swift/account-auditor.log
+if $programname == 'account-reaper' then /var/log/swift/account-reaper.log
+if $programname == 'container-server' then /var/log/swift/container-server.log
+if $programname == 'container-replicator' then /var/log/swift/container-replicator.log
+if $programname == 'container-updater' then /var/log/swift/container-updater.log
+if $programname == 'container-auditor' then /var/log/swift/container-auditor.log
+if $programname == 'container-sync' then /var/log/swift/container-sync.log
+if $programname == 'object-server' then /var/log/swift/object-server.log
+if $programname == 'object-replicator' then /var/log/swift/object-replicator.log
+if $programname == 'object-updater' then /var/log/swift/object-updater.log
+if $programname == 'object-auditor' then /var/log/swift/object-auditor.log
+if $programname == 'object-expirer' then /var/log/swift/object-expirer.log
+if $programname == 'drive-audit' then /var/log/swift/drive-audit.log
+if $programname == 'container-sharder' then /var/log/swift/container-sharder.log
+
+
+# Use the following to discard logs that don't match any of the above to avoid
+# them filling up /var/log/messages.
+local0.* stop
+
+
+
+### swift-proxy logs 
+### /etc/rsyslog.d/01-traditionalcustomformat.conf
+$template TraditionalCustomFileFormat,"%TIMESTAMP% %HOSTNAME% %syslogseverity-text% %syslogfacility-text% %syslogtag%%msg:::sp-if-no-1st-sp%%msg:::drop-last-lf%\n"
+
+
+### /etc/rsyslog.d/10-swift.conf
+if $programname == 'proxy-server' then /var/log/swift/proxy.log;TraditionalCustomFileFormat
+if $programname == 'swift' then /var/log/swift/swift.log
+local0.* stop
+
+
+
+#### Restart all services   in all swift-proxy and swift-storage nodes     
+systemctl restart rsyslog     
+systemctl restart rsync    
+systemctl restart memcached    
+swift-init all restart    
+
+
+
+#### check logs 
+tail -f /var/log/swift/proxy.log 
+tail -f /var/log/swift/account-server.log
+tail -f /var/log/swift/container-server.log
+tail -f /var/log/swift/object-server.log 
+
+
+
+---------------------------------
+
+# How to verify 
+
+### install swift client tools 
+apt install python3-swiftclient 
+
+
+### create admin.rc 
+ export OS_USERNAME=admin
+ export OS_PASSWORD=83c0cadd9c3dbce7eeec3e527b4dec02
+ export OS_PROJECT_NAME=admin
+ export OS_USER_DOMAIN_NAME=default
+ export OS_PROJECT_DOMAIN_NAME=default
+ export OS_AUTH_URL=http://10.10.10.180:5000/v3
+ export OS_IDENTITY_API_VERSION=3
+
+###
+source admin.rc 
+
+
+### create admin account 
+swift post 
+
+### get admin account status 
+swift stat 
+
+root@lab-swift-proxy-181:~# swift stat
+                    Account: AUTH_974270a8ee544a51a0b324e6141130f9
+                 Containers: 1
+                    Objects: 0
+                      Bytes: 0
+Containers in policy "gold": 1
+   Objects in policy "gold": 0
+     Bytes in policy "gold": 0
+               Content-Type: text/plain; charset=utf-8
+                X-Timestamp: 1729827758.87069
+              Accept-Ranges: bytes
+X-Account-Project-Domain-Id: default
+                       Vary: Accept
+                 X-Trans-Id: tx94b7f8886a7843e59765c-00672050de
+     X-Openstack-Request-Id: tx94b7f8886a7843e59765c-00672050de
+     
+### create container 
+swift post container02
+
+
+### check container02 status 
+root@lab-swift-proxy-181:~# swift stat container02
+               Account: AUTH_974270a8ee544a51a0b324e6141130f9
+             Container: container02
+               Objects: 0
+                 Bytes: 0
+              Read ACL:
+             Write ACL:
+               Sync To:
+              Sync Key:
+          Content-Type: text/plain; charset=utf-8
+           X-Timestamp: 1730171131.82396
+         Last-Modified: Tue, 29 Oct 2024 03:06:03 GMT
+         Accept-Ranges: bytes
+      X-Storage-Policy: gold
+                  Vary: Accept
+            X-Trans-Id: txe6da9d1429354c16ba9b3-006720518d
+X-Openstack-Request-Id: txe6da9d1429354c16ba9b3-006720518d
+
+### list all containers 
+swift list 
+
+root@lab-swift-proxy-181:~# swift list
+container01
+container02
+
+
+### upload file 
+root@lab-swift-proxy-181:~# swift upload container01 file01
+file01
+
+
+### check file01 status 
+root@lab-swift-proxy-181:~# swift stat container01 file01
+               Account: AUTH_974270a8ee544a51a0b324e6141130f9
+             Container: container01
+                Object: file01
+          Content Type: application/octet-stream
+        Content Length: 9
+         Last Modified: Tue, 29 Oct 2024 03:07:12 GMT
+                  ETag: 4c938d848cf992bdd094032c7b87ec8c
+            Meta Mtime: 1730171220.694496
+           X-Timestamp: 1730171231.56690
+         Accept-Ranges: bytes
+            X-Trans-Id: txfa8bc4506dc546c68b7ba-0067205174
+X-Openstack-Request-Id: txfa8bc4506dc546c68b7ba-0067205174
+
+### download file 
+root@lab-swift-proxy-181:~# swift download container01 file01
+file01 [auth 0.488s, headers 0.724s, total 0.724s, 0.000 MB/s]
+
+------------- END -------------------

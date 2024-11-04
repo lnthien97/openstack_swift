@@ -1,0 +1,98 @@
+## Create an account 
+
+- credential file :  admin.rc
+    export OS_USERNAME=admin
+    export OS_PASSWORD=xxx
+    export OS_PROJECT_NAME=admin
+    export OS_USER_DOMAIN_NAME=default
+    export OS_PROJECT_DOMAIN_NAME=default
+    export OS_AUTH_URL=http://10.237.7.180:5000/v3
+    export OS_IDENTITY_API_VERSION=3
+
+source admin.rc 
+
+- Create user,project in keystone 
+openstack user create thienln --password ****
++---------------------+----------------------------------+
+| Field               | Value                            |
++---------------------+----------------------------------+
+| domain_id           | default                          |
+| enabled             | True                             |
+| id                  | 447e78f1b1b84a939e814e1cfa431352 |
+| name                | thienln                          |
+| options             | {}                               |
+| password_expires_at | None                             |
++---------------------+----------------------------------+
+
+openstack project create thienln_project01
++-------------+----------------------------------+
+| Field       | Value                            |
++-------------+----------------------------------+
+| description |                                  |
+| domain_id   | default                          |
+| enabled     | True                             |
+| id          | f5e1e09b97ad4a15a5bc382e62c5044f |
+| is_domain   | False                            |
+| name        | thienln_project01                |
+| options     | {}                               |
+| parent_id   | default                          |
+| tags        | []                               |
++-------------+----------------------------------+
+
+- Assign user+project to a role 
+openstack role add --user thienln --project thienln_project01 admin
+
+
+- Create thienln.rc 
+ export OS_USERNAME=thienln
+ export OS_PASSWORD=****
+ export OS_PROJECT_NAME=thienln_project01
+ export OS_USER_DOMAIN_NAME=default
+ export OS_PROJECT_DOMAIN_NAME=default
+ export OS_AUTH_URL=http://10.237.7.180:5000/v3
+ export OS_IDENTITY_API_VERSION=3
+
+
+source thienln.rc 
+
+swift stat 
+               Account: AUTH_f5e1e09b97ad4a15a5bc382e62c5044f
+            Containers: 0
+               Objects: 0
+                 Bytes: 0
+          Content-Type: text/plain; charset=utf-8
+           X-Timestamp: 1730340987.32951
+       X-Put-Timestamp: 1730340987.32951
+                  Vary: Accept
+            X-Trans-Id: tx01b39105bd844bd8ad31b-006722e87a
+X-Openstack-Request-Id: tx01b39105bd844bd8ad31b-006722e87a
+               X-Cache: MISS from localhost
+        X-Cache-Lookup: MISS from localhost:3128
+                   Via: 1.1 localhost (squid/5.8)
+            Connection: keep-alive
+
+
+- create container 
+swift post container
+
+- list container in account 
+swift list
+    -> container01
+
+- upload file 
+swift upload container file01 
+    -> file01
+
+- download file 
+swift download container file01
+file01 [auth 0.472s, headers 0.645s, total 0.645s, 0.000 MB/s
+
+- Get information account/container/object 
+swift [container] [object] stat 
+
+- List container/object 
+swift list [container] 
+
+- Delete object 
+swift delete container file01 
+

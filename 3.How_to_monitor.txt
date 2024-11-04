@@ -1,0 +1,223 @@
+---- Logs ----
+- config /etc/swift/[proxy|account|container|object].conf 
+
+[DEFAULT]
+...
+log_name = swift
+log_facility = LOG_LOCAL0
+log_level = INFO
+log_headers = false
+...
+
+- /etc/rsyslog.d/
+    ./
+    ├── 01-traditionalcustomformat.conf
+    ├── 10-swift.conf
+
+cat 01-traditionalcustomformat.conf
+    $template TraditionalCustomFileFormat,"%TIMESTAMP% %HOSTNAME% %syslogseverity-text% %syslogfacility-text% %syslogtag%%msg:::sp-if-no-1st-sp%%msg:::drop-last-lf%\n"
+
+cat 10-swift.conf 
+    # Uncomment the following to have specific log via program name
+    if $programname == 'proxy-server' then /var/log/swift/proxy.log;TraditionalCustomFileFormat
+
+    if $programname == 'swift' then /var/log/swift/swift.log
+    if $programname == 'account-server' then /var/log/swift/account-server.log
+    if $programname == 'account-replicator' then /var/log/swift/account-replicator.log
+    if $programname == 'account-auditor' then /var/log/swift/account-auditor.log
+    if $programname == 'account-reaper' then /var/log/swift/account-reaper.log
+    if $programname == 'container-server' then /var/log/swift/container-server.log
+    if $programname == 'container-replicator' then /var/log/swift/container-replicator.log
+    if $programname == 'container-updater' then /var/log/swift/container-updater.log
+    if $programname == 'container-auditor' then /var/log/swift/container-auditor.log
+    if $programname == 'container-sync' then /var/log/swift/container-sync.log
+    if $programname == 'object-server' then /var/log/swift/object-server.log
+    if $programname == 'object-replicator' then /var/log/swift/object-replicator.log
+    if $programname == 'object-updater' then /var/log/swift/object-updater.log
+    if $programname == 'object-auditor' then /var/log/swift/object-auditor.log
+    if $programname == 'object-expirer' then /var/log/swift/object-expirer.log
+    if $programname == 'drive-audit' then /var/log/swift/drive-audit.log
+    if $programname == 'container-sharder' then /var/log/swift/container-sharder.log
+
+
+    # Use the following to discard logs that don't match any of the above to avoid
+    # them filling up /var/log/messages.
+    local0.* stop
+
+
+mkdir /var/log/swift 
+chown -R syslog:adm /var/log/swift 
+systemctl restart rsyslog 
+
+----- swift command ----
+
+swift-recon --all 
+
+===============================================================================
+--> Starting reconnaissance on 2 hosts (object)
+===============================================================================
+[2024-10-31 02:36:50] Checking async pendings
+[async_pending] - No hosts returned valid data.
+===============================================================================
+[2024-10-31 02:36:50] Checking auditor stats
+[ALL_auditor] - No hosts returned valid data.
+[ZBF_auditor] - No hosts returned valid data.
+===============================================================================
+[2024-10-31 02:36:50] Checking updater times
+[updater_last_sweep] - No hosts returned valid data.
+===============================================================================
+[2024-10-31 02:36:51] Checking on expirers
+[object_expiration_pass] - No hosts returned valid data.
+[expired_last_pass] - No hosts returned valid data.
+===============================================================================
+[2024-10-31 02:36:51] Checking on reconstructors
+[object_reconstruction_time] - No hosts returned valid data.
+===============================================================================
+[2024-10-31 02:36:51] Checking on replication
+[replication_time] - No hosts returned valid data.
+[failure] - No hosts returned valid data.
+[success] - No hosts returned valid data.
+[attempted] - No hosts returned valid data.
+===============================================================================
+[2024-10-31 02:36:51] Getting unmounted drives from 2 hosts...
+===============================================================================
+[2024-10-31 02:36:51] Checking load averages
+[1m_load_avg] low: 0, high: 0, avg: 0.0, total: 0, Failed: 0.0%, no_result: 0, reported: 2
+[5m_load_avg] low: 0, high: 0, avg: 0.0, total: 0, Failed: 0.0%, no_result: 0, reported: 2
+[15m_load_avg] low: 0, high: 0, avg: 0.0, total: 0, Failed: 0.0%, no_result: 0, reported: 2
+===============================================================================
+[2024-10-31 02:36:51] Checking disk usage now
+Distribution Graph:
+  0%    6 *********************************************************************
+Disk usage: space used: 922484736 of 103003717632
+Disk usage: space free: 102081232896 of 103003717632
+Disk usage: lowest: 0.89%, highest: 0.9%, avg: 0.8955839237722941%
+===============================================================================
+[2024-10-31 02:36:51] Checking ring md5sums
+2/2 hosts matched, 0 error[s] while checking hosts.
+===============================================================================
+[2024-10-31 02:36:51] Checking swift.conf md5sum
+2/2 hosts matched, 0 error[s] while checking hosts.
+===============================================================================
+[2024-10-31 02:36:51] Checking quarantine
+[quarantined_objects] low: 0, high: 0, avg: 0.0, total: 0, Failed: 0.0%, no_result: 0, reported: 2
+[quarantined_containers] low: 0, high: 0, avg: 0.0, total: 0, Failed: 0.0%, no_result: 0, reported: 2
+[quarantined_accounts] low: 0, high: 0, avg: 0.0, total: 0, Failed: 0.0%, no_result: 0, reported: 2
+===============================================================================
+[2024-10-31 02:36:51] Checking socket usage
+[tcp_in_use] low: 27, high: 31, avg: 29.0, total: 58, Failed: 0.0%, no_result: 0, reported: 2
+[tcp_mem_allocated_bytes] low: 28672, high: 28672, avg: 28672.0, total: 57344, Failed: 0.0%, no_result: 0, reported: 2
+[tcp6_in_use] low: 1, high: 1, avg: 1.0, total: 2, Failed: 0.0%, no_result: 0, reported: 2
+[time_wait] low: 48, high: 64, avg: 56.0, total: 112, Failed: 0.0%, no_result: 0, reported: 2
+[orphan] low: 0, high: 0, avg: 0.0, total: 0, Failed: 0.0%, no_result: 0, reported: 2
+===============================================================================
+[2024-10-31 02:36:51] Validating server type 'object' on 2 hosts...
+2/2 hosts ok, 0 error[s] while checking hosts.
+===============================================================================
+[2024-10-31 02:36:51] Checking drive-audit errors
+[drive_audit_errors] - No hosts returned valid data.
+===============================================================================
+[2024-10-31 02:36:51] Checking time-sync
+!! http://10.237.7.182:6100/recon/time current time is 2024-10-31 02:36:51, but remote is 2024-10-31 02:36:15, differs by 36.0131 sec
+!! http://10.237.7.183:6100/recon/time current time is 2024-10-31 02:36:51, but remote is 2024-10-31 02:36:51, differs by 0.0282 sec
+0/2 hosts matched, 0 error[s] while checking hosts.
+===============================================================================
+[2024-10-31 02:36:51] Checking versions
+Versions matched (2.30.1), 0 error[s] while checking hosts.
+===============================================================================
+
+
+----- swift metrics ---- 
+https://docs.openstack.org/swift/latest/metrics/all.html
+
+swift metrics in statsd format -> Telegraf -> InfluxDB -> Grafana Dashboard 
+
+- How to install influxDB :
+https://docs.influxdata.com/influxdb/v2/install/?t=Linux#download-and-install-influxdb-v2
+
+curl --silent --location -O \
+https://repos.influxdata.com/influxdata-archive.key
+echo "943666881a1b8d9b849b74caebf02d3465d6beb716510d86a39f6c8e8dac7515  influxdata-archive.key" \
+| sha256sum --check - && cat influxdata-archive.key \
+| gpg --dearmor \
+| tee /etc/apt/trusted.gpg.d/influxdata-archive.gpg > /dev/null \
+&& echo 'deb [signed-by=/etc/apt/trusted.gpg.d/influxdata-archive.gpg] https://repos.influxdata.com/debian stable main' \
+| tee /etc/apt/sources.list.d/influxdata.list
+# Install influxdb
+sudo apt-get update && sudo apt-get install influxdb2
+
+
+systemctl restart influxdb
+systemctl status influxdb
+
+
+https://<influxdb>:8086
+first login action 
+
+-> token 
+gWSABfTlerVvhB19V6U-CHWlAUzSHoIePKb_aGKLciGX0JQWD_RIMBDrmzcqkdyIgmmEyQwbXKfmxKSWV_Ymww==
+
+export INFLUX_TOKEN=gWSABfTlerVvhB19V6U-CHWlAUzSHoIePKb_aGKLciGX0JQWD_RIMBDrmzcqkdyIgmmEyQwbXKfmxKSWV_Ymww==
+
+influx bucket ls -o vng
+ID                      Name            Retention       Shard group duration    Organization ID         Schema Type
+f9444162d7d85e89        _monitoring     168h0m0s        24h0m0s                 6a7700e89aa9d34c        implicit
+abc95848cf2bf480        _tasks          72h0m0s         24h0m0s                 6a7700e89aa9d34c        implicit
+574985dd0d9e029f        swift           infinite        168h0m0s                6a7700e89aa9d34c        implicit
+
+
+influx v1 shell
+InfluxQL Shell dev
+Connected to InfluxDB OSS v2.7.10
+> show DATABASES;
+
+Interactive Table View (press q to exit mode, shift+up/down to navigate tables):
+Name: databases
+┏━━━━━━━┳━━━━━━━━━━━━━┓
+┃ index ┃    name     ┃
+┣━━━━━━━╋━━━━━━━━━━━━━┫
+┃      1┃_monitoring  ┃
+┃      2┃_tasks       ┃
+┃      3┃swift        ┃
+┣━━━━━━━┻━━━━━━━━━━━━━┫
+┃   2 Columns, 3 Rows,┃
+┃             Page 1/1┃
+┃ Table 1/1, Statement┃
+┃                  1/1┃
+┗━━━━━━━━━━━━━━━━━━━━━┛
+
+
+-- install telegraf --
+
+
+curl --silent --location -O \
+https://repos.influxdata.com/influxdata-archive.key \
+&& echo "943666881a1b8d9b849b74caebf02d3465d6beb716510d86a39f6c8e8dac7515  influxdata-archive.key" \
+| sha256sum -c - && cat influxdata-archive.key \
+| gpg --dearmor \
+| sudo tee /etc/apt/trusted.gpg.d/influxdata-archive.gpg > /dev/null \
+&& echo 'deb [signed-by=/etc/apt/trusted.gpg.d/influxdata-archive.gpg] https://repos.influxdata.com/debian stable main' \
+| sudo tee /etc/apt/sources.list.d/influxdata.list
+apt-get update  
+apt-get install telegraf
+
+
+
+
+[[outputs.influxdb_v2]]
+  ## The URLs of the InfluxDB cluster nodes.
+  ##
+  ## Multiple URLs can be specified for a single cluster, only ONE of the
+  ## urls will be written to each interval.
+  ##   ex: urls = ["https://us-west-2-1.aws.cloud2.influxdata.com"]
+  urls = ["http://10.237.7.170:8086"]
+
+  ## API token for authentication.
+  token = "$INFLUX_TOKEN"
+
+  ## Organization is the name of the organization you wish to write to; must exist.
+  organization = "vng"
+
+  ## Destination bucket to write into.
+  bucket = "swift"
+

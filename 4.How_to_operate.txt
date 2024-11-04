@@ -1,0 +1,6 @@
+- Replace failed device 
+- Add node
+- Remove node
+
+
+
