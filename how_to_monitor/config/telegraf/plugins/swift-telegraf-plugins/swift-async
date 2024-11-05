@@ -1,0 +1,30 @@
+#!/usr/bin/python
+import myfunction as my
+import re
+import json
+from argparse import ArgumentParser
+
+parser = ArgumentParser()
+parser.add_argument('-r', '--role', help='Server role account|container|object',
+                    default='object')
+args = parser.parse_args()
+
+# Example output
+#[async_pending] low: 0, high: 0, avg: 0.0, total: 0, Failed: 0.0%, no_result: 0, reported: 5
+
+_out_cmd = my.call_cmd("swift-recon %s --async" % args.role)
+
+data={}
+data['name'] = 'swift-async'
+data['role'] = "{}-server".format(args.role)
+
+for line in _out_cmd.splitlines():
+
+    matchObj = my.matchObj("\[async_pending\] low: (\d+|\d+\.\d+), high: (\d+|\d+\.\d+), avg: (\d+|\d+\.\d+), total: (\d+|\d+\.\d+), .*", line)
+    if matchObj is not None:
+        data['async_pending-low'] = float(matchObj.group(1))
+        data['async_pending-high'] = float(matchObj.group(2))
+        data['async_pending-avg'] = round(float(matchObj.group(3)),1)
+        data['async_pending-total'] = float(matchObj.group(4))
+
+print json.dumps(data)

@@ -1,0 +1,66 @@
+#!/usr/bin/python
+import myfunction as my
+import re
+import json
+from argparse import ArgumentParser
+
+parser = ArgumentParser()
+parser.add_argument('-r', '--role', help='Server role account|container|object',
+                    default='object')
+args = parser.parse_args()
+
+# Example output
+#:/etc/telegraf/plugins/swift# swift-recon account --audit
+#===============================================================================
+#--> Starting reconnaissance on 4 hosts (account)
+#===============================================================================
+#[2019-01-06 17:47:04] Checking auditor stats
+#[account_auditor_pass_completed] low: 0, high: 0, avg: 0.5, total: 1, Failed: 0.0%, no_result: 0, reported: 4
+#[account_audits_passed] low: 174, high: 180, avg: 177.0, total: 708, Failed: 0.0%, no_result: 0, reported: 4
+#[account_audits_failed] low: 0, high: 0, avg: 0.0, total: 0, Failed: 0.0%, no_result: 0, reported: 4
+#[last_pass] oldest: 2019-01-06 15:55:33, newest: 2019-01-06 16:04:49, avg: 2019-01-06 15:59:06
+#===============================================================================
+#:/etc/telegraf/plugins/swift# swift-recon container --audit
+#===============================================================================
+#--> Starting reconnaissance on 4 hosts (container)
+#===============================================================================
+#[2019-01-06 17:47:11] Checking auditor stats
+#[container_audits_passed] low: 992, high: 1116, avg: 1054.0, total: 4216, Failed: 0.0%, no_result: 0, reported: 4
+#[container_auditor_pass_completed] low: 2, high: 2, avg: 2.6, total: 10, Failed: 0.0%, no_result: 0, reported: 4
+#[container_audits_failed] low: 0, high: 0, avg: 0.0, total: 0, Failed: 0.0%, no_result: 0, reported: 4
+#[last_pass] oldest: 2019-01-06 16:01:24, newest: 2019-01-06 16:44:39, avg: 2019-01-06 16:32:01
+#===============================================================================
+#:/etc/telegraf/plugins/swift# swift-recon object --audit
+#===============================================================================
+#--> Starting reconnaissance on 4 hosts (object)
+#===============================================================================
+#[2019-01-06 17:47:17] Checking auditor stats
+#[ALL_audit_time_last_path] low: 0, high: 3600, avg: 900.1, total: 3600, Failed: 0.0%, no_result: 0, reported: 4
+#[ALL_quarantined_last_path] low: 0, high: 0, avg: 0.0, total: 0, Failed: 0.0%, no_result: 0, reported: 4
+#[ALL_errors_last_path] low: 0, high: 0, avg: 0.0, total: 0, Failed: 0.0%, no_result: 0, reported: 4
+#[ALL_passes_last_path] low: 1, high: 5051, avg: 1263.5, total: 5054, Failed: 0.0%, no_result: 0, reported: 4
+#[ALL_bytes_processed_last_path] low: 0, high: 36007481737, avg: 9003137580.5, total: 36012550322, Failed: 0.0%, no_result: 0, reported: 4
+#[ZBF_audit_time_last_path] low: 0, high: 0, avg: 0.0, total: 0, Failed: 0.0%, no_result: 0, reported: 4
+#[ZBF_quarantined_last_path] low: 0, high: 0, avg: 0.0, total: 0, Failed: 0.0%, no_result: 0, reported: 4
+#[ZBF_errors_last_path] low: 0, high: 0, avg: 0.0, total: 0, Failed: 0.0%, no_result: 0, reported: 4
+#[ZBF_bytes_processed_last_path] low: 0, high: 0, avg: 0.0, total: 0, Failed: 0.0%, no_result: 0, reported: 4
+#===============================================================================
+
+_out_cmd = my.call_cmd("swift-recon %s --audit" % args.role)
+
+data={}
+data['name'] = 'swift-audit'
+data['role'] = "{}-server".format(args.role)
+
+metrics = ["account_auditor_pass_completed", "account_audits_passed", "account_audits_failed", "container_audits_passed", "container_auditor_pass_completed", "container_audits_failed", "ALL_audit_time_last_path", "ALL_quarantined_last_path", "ALL_errors_last_path", "ALL_passes_last_path", "ALL_bytes_processed_last_path", "ZBF_audit_time_last_path", "ZBF_quarantined_last_path", "ZBF_errors_last_path", "ZBF_bytes_processed_last_path"]
+
+for line in _out_cmd.splitlines():
+    for metric in metrics:   
+    	matchObj = my.matchObj("\[{metric}\] low: (\d+|\d+\.\d+), high: (\d+|\d+\.\d+), avg: (\d+|\d+\.\d+), total: (\d+|\d+\.\d+), .*".format(metric=metric), line)
+    	if matchObj is not None:
+        	data['{}-low'.format(metric)] = float(matchObj.group(1))
+        	data['{}-high'.format(metric)] = float(matchObj.group(2))
+        	data['{}-avg'.format(metric)] = round(float(matchObj.group(3)),1)
+        	data['{}-total'.format(metric)] = float(matchObj.group(4))
+
+print json.dumps(data)

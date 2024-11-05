@@ -1,0 +1,116 @@
+
+----- swift metrics ---- 
+https://docs.openstack.org/swift/latest/metrics/all.html
+
+swift metrics in statsd format -> Telegraf -> InfluxDB -> Grafana Dashboard 
+
+
+
+----- How to install influxDB -----
+https://docs.influxdata.com/influxdb/v2/install/?t=Linux#download-and-install-influxdb-v2
+
+curl --silent --location -O \
+https://repos.influxdata.com/influxdata-archive.key
+echo "943666881a1b8d9b849b74caebf02d3465d6beb716510d86a39f6c8e8dac7515  influxdata-archive.key" \
+| sha256sum --check - && cat influxdata-archive.key \
+| gpg --dearmor \
+| tee /etc/apt/trusted.gpg.d/influxdata-archive.gpg > /dev/null \
+&& echo 'deb [signed-by=/etc/apt/trusted.gpg.d/influxdata-archive.gpg] https://repos.influxdata.com/debian stable main' \
+| tee /etc/apt/sources.list.d/influxdata.list
+# Install influxdb
+sudo apt-get update && sudo apt-get install influxdb2
+
+
+systemctl restart influxdb
+systemctl status influxdb
+
+
+https://<influxdb>:8086
+first login action 
+
+-> token 
+gWSABfTlerVvhB19V6U-CHWlAUzSHoIePKb_aGKLciGX0JQWD_RIMBDrmzcqkdyIgmmEyQwbXKfmxKSWV_Ymww==
+
+export INFLUX_TOKEN=gWSABfTlerVvhB19V6U-CHWlAUzSHoIePKb_aGKLciGX0JQWD_RIMBDrmzcqkdyIgmmEyQwbXKfmxKSWV_Ymww==
+
+influx bucket ls -o vng
+ID                      Name            Retention       Shard group duration    Organization ID         Schema Type
+f9444162d7d85e89        _monitoring     168h0m0s        24h0m0s                 6a7700e89aa9d34c        implicit
+abc95848cf2bf480        _tasks          72h0m0s         24h0m0s                 6a7700e89aa9d34c        implicit
+574985dd0d9e029f        swift           infinite        168h0m0s                6a7700e89aa9d34c        implicit
+
+
+influx v1 shell
+InfluxQL Shell dev
+Connected to InfluxDB OSS v2.7.10
+> show DATABASES;
+
+Interactive Table View (press q to exit mode, shift+up/down to navigate tables):
+Name: databases
+┏━━━━━━━┳━━━━━━━━━━━━━┓
+┃ index ┃    name     ┃
+┣━━━━━━━╋━━━━━━━━━━━━━┫
+┃      1┃_monitoring  ┃
+┃      2┃_tasks       ┃
+┃      3┃swift        ┃
+┣━━━━━━━┻━━━━━━━━━━━━━┫
+┃   2 Columns, 3 Rows,┃
+┃             Page 1/1┃
+┃ Table 1/1, Statement┃
+┃                  1/1┃
+┗━━━━━━━━━━━━━━━━━━━━━┛
+
+
+------  Telegraf ------
+
+
+curl --silent --location -O \
+https://repos.influxdata.com/influxdata-archive.key \
+&& echo "943666881a1b8d9b849b74caebf02d3465d6beb716510d86a39f6c8e8dac7515  influxdata-archive.key" \
+| sha256sum -c - && cat influxdata-archive.key \
+| gpg --dearmor \
+| sudo tee /etc/apt/trusted.gpg.d/influxdata-archive.gpg > /dev/null \
+&& echo 'deb [signed-by=/etc/apt/trusted.gpg.d/influxdata-archive.gpg] https://repos.influxdata.com/debian stable main' \
+| sudo tee /etc/apt/sources.list.d/influxdata.list
+apt-get update  
+apt-get install telegraf
+
+
+## /etc/telegraf/telegraf.conf 
+
+[global_tags]
+[agent]
+  interval = "10s"
+  round_interval = true
+  metric_batch_size = 1000
+  metric_buffer_limit = 10000
+  collection_jitter = "0s"
+  flush_interval = "10s"
+  flush_jitter = "0s"
+  precision = "0s"
+[[outputs.influxdb_v2]]
+   urls = ["http://10.237.7.170:8086"]
+   token = "gWSABfTlerVvhB19V6U-CHWlAUzSHoIePKb_aGKLciGX0JQWD_RIMBDrmzcqkdyIgmmEyQwbXKfmxKSWV_Ymww=="
+   organization = "vng"
+   bucket = "swift"
+[[inputs.cpu]]
+  percpu = true
+  totalcpu = true
+  collect_cpu_time = false
+  report_active = false
+  core_tags = false
+[[inputs.disk]]
+  ignore_fs = ["tmpfs", "devtmpfs", "devfs", "iso9660", "overlay", "aufs", "squashfs"]
+[[inputs.diskio]]
+[[inputs.kernel]]
+[[inputs.mem]]
+[[inputs.processes]]
+[[inputs.swap]]
+[[inputs.system]]
+
+
+root@lab-swift-proxy-181:/etc/telegraf# tree  ./
+./
+├── telegraf.conf
+└── telegraf.d
+    └── swift-statsd.conf

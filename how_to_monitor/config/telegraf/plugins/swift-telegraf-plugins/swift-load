@@ -1,0 +1,33 @@
+#!/usr/bin/python
+import myfunction as my
+import re
+import json
+from argparse import ArgumentParser
+
+parser = ArgumentParser()
+parser.add_argument('-r', '--role', help='Server role account|container|object',
+                    default='object')
+args = parser.parse_args()
+
+# Example output
+#[2018-11-13 09:08:25] Checking load averages
+#[5m_load_avg] low: 3, high: 4, avg: 3.9, total: 19, Failed: 0.0%, no_result: 0, reported: 5
+#[15m_load_avg] low: 3, high: 4, avg: 3.8, total: 18, Failed: 0.0%, no_result: 0, reported: 5
+#[1m_load_avg] low: 2, high: 5, avg: 4.2, total: 21, Failed: 0.0%, no_result: 0, reported: 5
+
+_out_cmd = my.call_cmd("swift-recon %s -l" % args.role)
+
+data={}
+data['name'] = 'swift-load'
+data['role'] = "{}-server".format(args.role)
+
+for line in _out_cmd.splitlines():
+
+    matchObj_load1 = my.matchObj("\[1m_load_avg\] low: (\d+|\d+\.\d+), high: (\d+|\d+\.\d+), avg: (\d+|\d+\.\d+), total: (\d+|\d+\.\d+), .*", line)
+    if matchObj_load1 is not None:
+        data['load1-low'] = float(matchObj_load1.group(1))
+        data['load1-high'] = float(matchObj_load1.group(2))
+        data['load1-avg'] = round(float(matchObj_load1.group(3)),1)
+        data['load1-total'] = float(matchObj_load1.group(4))
+
+print json.dumps(data)

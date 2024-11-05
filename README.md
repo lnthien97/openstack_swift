@@ -1,7 +1,6 @@
 # openstack swift
-how to build and manage object storage cluster 
-
-# Model 
-
-# Requirement
+- How to install a openstack swift storage cluster 
+- How to use it 
+- How to monitor it 
+- How to operate it 
 

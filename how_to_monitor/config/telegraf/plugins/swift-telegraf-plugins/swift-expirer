@@ -1,0 +1,101 @@
+#!/usr/bin/python
+import myfunction as my
+import re, os
+import json
+import configparser
+from argparse import ArgumentParser
+
+######################
+### CONFIG DEFAULT ###
+######################
+SWIFT_DIR            = "/etc/swift"
+SWIFT_OBJECT_RINGS   = [f for f in os.listdir(SWIFT_DIR) if re.match(r'object(|\-[0-9])\.ring\.gz', f)]
+SWIFT_CONFIG         = os.path.join(SWIFT_DIR, "swift.conf")
+
+swconfig = configparser.ConfigParser()
+swconfig.read(SWIFT_CONFIG)
+ring_map = {}
+result = []
+
+parser = ArgumentParser()
+parser.add_argument('-r', '--role', help='Server role account|container|object',
+                    default='object')
+args = parser.parse_args()
+
+def get_swift_ring():
+    # Example ring_map
+    # {'object-2.ring.gz': {'name': 'diamond', 'id': 2}, 'object-1.ring.gz': {'name': 'silver', 'id': 1}, 'object.ring.gz': {'name': 'gold', 'id': 0}}
+    for section in swconfig:
+        if 'storage-policy' in section:
+            policy_id   = int(section.split(':')[1])
+            policy_name = swconfig[section]['name']
+            if policy_id == 0:
+                ring_file = 'object.ring.gz'
+            else:
+                ring_file = 'object-{}.ring.gz'.format(policy_id)
+
+            ring_map[ring_file] = {}
+            ring_map[ring_file]['name'] = str(policy_name)
+            ring_map[ring_file]['id'] = int(policy_id)
+
+def check_object_expirer_recon(id, name):
+    # Example output
+    #[2018-11-14 07:40:05] Checking on expirers
+    #[object_expiration_pass] low: 2, high: 3, avg: 2.9, total: 14, Failed: 0.0%, no_result: 0, reported: 5
+    #[expired_last_pass] low: 0, high: 10, avg: 5.0, total: 25, Failed: 0.0%, no_result: 0, reported: 5
+
+    _out_cmd = my.call_cmd("swift-recon " + args.role + " --expirer -p " + str(id))
+
+    data={}
+    data['name'] = 'swift-expirer'
+    data['role'] = "{}-server".format(args.role)
+    data['policy-name'] = name
+
+    for line in _out_cmd.splitlines():
+
+        matchObj_object = my.matchObj("\[object_expiration_pass\] low: (\d+|\d+\.\d+), high: (\d+|\d+\.\d+), avg: (\d+|\d+\.\d+), total: (\d+|\d+\.\d+), .*", line)
+        if matchObj_object is not None:
+            data['object_expiration_pass-low'] = int(matchObj_object.group(1))
+            data['object_expiration_pass-high'] = int(matchObj_object.group(2))
+            data['object_expiration_pass-avg'] = round(float(matchObj_object.group(3)),1)
+            data['object_expiration_pass-total'] = int(matchObj_object.group(4))
+
+        matchObj_object = my.matchObj("\[expired_last_pass\] low: (\d+|\d+\.\d+), high: (\d+|\d+\.\d+), avg: (\d+|\d+\.\d+), total: (\d+|\d+\.\d+), .*", line)
+        if matchObj_object is not None:
+            data['expired_last_pass-low'] = int(matchObj_object.group(1))
+            data['expired_last_pass-high'] = int(matchObj_object.group(2))
+            data['expired_last_pass-avg'] = round(float(matchObj_object.group(3)),1)
+            data['expired_last_pass-total'] = int(matchObj_object.group(4))
+
+    result.append(data)
+
+def check_object_expirer_head():
+    ##############################
+    ### Check .expiring_objects###
+    ##############################
+    data={}
+    data['name'] = 'swift-expirer'
+    data['role'] = "account-server"
+
+    # Get head endpoint
+    get_endpoint = os.popen("swift-get-nodes -a " + SWIFT_DIR + "/account.ring.gz .expiring_objects | grep 'curl -g -I -XHEAD' | sed '/Handoff/d'").read().strip().split('\n')
+
+    for endpoint in get_endpoint:
+        object_expirer = os.popen(endpoint + " -s | grep 'X-Account-Storage-Policy' | grep 'Object-Count' | sed  's/X-Account-Storage-Policy-//g' | sed 's/-Object-Count://g'").read().strip()
+        if object_expirer:
+            for policy in object_expirer.split('\n'):
+                data['policy-name'] = policy.split(" ")[0].lower()
+                data['object-count'] = int(policy.split(" ")[1])
+                result.append(data)
+            break
+
+if __name__ == '__main__':
+    get_swift_ring()
+
+    # Kiem tra tung ring
+    for ring in SWIFT_OBJECT_RINGS:
+        check_object_expirer_recon(ring_map[ring]['id'], ring_map[ring]['name'])
+
+    check_object_expirer_head()
+
+    print json.dumps(result)

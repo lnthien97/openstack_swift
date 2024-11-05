@@ -1,0 +1,30 @@
+#!/usr/bin/python
+import myfunction as my
+import re
+import json
+from argparse import ArgumentParser
+
+parser = ArgumentParser()
+parser.add_argument('-r', '--role', help='Server role account|container|object',
+                    default='object')
+args = parser.parse_args()
+
+# Example output
+#[updater_last_sweep] low: 1, high: 1, avg: 1.5, total: 7, Failed: 0.0%, no_result: 0, reported: 5
+
+_out_cmd = my.call_cmd("swift-recon %s --updater" % args.role)
+
+data={}
+data['name'] = 'swift-updater'
+data['role'] = "{}-server".format(args.role)
+
+for line in _out_cmd.splitlines():
+
+    matchObj = my.matchObj("\[updater_last_sweep\] low: (\d+|\d+\.\d+), high: (\d+|\d+\.\d+), avg: (\d+|\d+\.\d+), total: (\d+|\d+\.\d+), .*", line)
+    if matchObj is not None:
+        data['updater_last_sweep-low'] = int(matchObj.group(1))
+        data['updater_last_sweep-high'] = int(matchObj.group(2))
+        data['updater_last_sweep-avg'] = round(float(matchObj.group(3)),1)
+        data['updater_last_sweep-total'] = int(matchObj.group(4))
+
+print json.dumps(data)

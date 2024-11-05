@@ -1,0 +1,131 @@
+#!/usr/bin/python
+import myfunction as my
+import re, os
+import json
+import configparser
+from argparse import ArgumentParser
+
+
+######################
+### CONFIG DEFAULT ###
+######################
+SWIFT_DIR            = "/etc/swift"
+SWIFT_OBJECT_RINGS   = [f for f in os.listdir(SWIFT_DIR) if re.match(r'object(|\-[0-9])\.ring\.gz', f)]
+SWIFT_CONFIG         = os.path.join(SWIFT_DIR, "swift.conf")
+
+swconfig = configparser.ConfigParser()
+swconfig.read(SWIFT_CONFIG)
+ring_map = {}
+device_map = {}
+result = []
+
+parser = ArgumentParser()
+parser.add_argument('-r', '--role', help='Server role account|container|object',
+                    default='object')
+args = parser.parse_args()
+
+
+
+def get_swift_ring():
+    # Example ring_map
+    # {'object-2.ring.gz': {'name': 'diamond', 'id': 2}, 'object-1.ring.gz': {'name': 'silver', 'id': 1}, 'object.ring.gz': {'name': 'gold', 'id': 0}}
+    for section in swconfig:
+        if 'storage-policy' in section:
+            policy_id   = int(section.split(':')[1])
+            policy_name = swconfig[section]['name']
+            if policy_id == 0:
+                ring_file = 'object.ring.gz'
+            else:
+                ring_file = 'object-{}.ring.gz'.format(policy_id)
+
+            ring_map[ring_file] = {}
+            ring_map[ring_file]['name'] = str(policy_name)
+            ring_map[ring_file]['id'] = int(policy_id)
+
+def get_swift_devices(ring_file):
+    get_total_line = int(os.popen("swift-ring-builder " + SWIFT_DIR + "/" + ring_file + " | wc | awk '{ print $1 }'").read())
+
+    filter_ip = os.popen("swift-ring-builder " + SWIFT_DIR + "/" + ring_file + " | tail -n " + str(get_total_line - 7) + "| awk '{ print $4 \" \" $6 \" \" $7 }'").read().strip().split("\n")
+
+    device_map[ring_file] = {}
+
+    for ip in filter_ip:
+        host_device = ip.split(" ")
+
+        if float(host_device[2]) > 0:
+
+            if host_device[0] not in device_map[ring_file]:
+                device_map[ring_file][host_device[0]] = {}
+                device_map[ring_file][host_device[0]]["device"] = []
+
+            device_map[ring_file][host_device[0]]["device"].append(host_device[1])
+
+def check_usage_api(ring_file):
+
+    for ip in device_map[ring_file]:
+        device_map[ring_file][ip]["usage"] = {}
+        device_map[ring_file][ip]["usage"]["avail"] = 0
+        device_map[ring_file][ip]["usage"]["used"] = 0
+        device_map[ring_file][ip]["usage"]["size"] = 0
+        
+        """
+        [{u'device': u'd1', u'avail': 660765888512, u'mounted': True, u'used': 298690588672, u'size': 959456477184}, {u'device': u'd2', u'avail': 928250744832, u'mounted': True, u'used': 31205732352, u'size': 959456477184}]
+        """
+        data = json.loads(os.popen("curl " + ip + "/recon/diskusage -s").read())
+
+        for disk in device_map[ring_file][ip]["device"]:
+            for tmp in data:
+                if tmp["device"] == str(disk) and tmp["mounted"] == True:
+
+                    device_map[ring_file][ip]["usage"]["avail"] += tmp["avail"]
+                    device_map[ring_file][ip]["usage"]["used"] += tmp["used"]
+                    device_map[ring_file][ip]["usage"]["size"] += tmp["size"]
+
+def set_data(ring_f = None):
+    data["name"] = 'swift-usage'
+    data["role"] = "{}-server".format(args.role)
+    data["total-bytes"]     = 0
+    data["used-bytes"]      = 0
+    data["free-bytes"]      = 0
+    data["used-percent"]    = 0
+    data["maxnodesize"]     = 0
+
+    # for ring_f in device_map:
+        
+    for ip in device_map[ring_f]:
+        data["total-bytes"]     += device_map[ring_f][ip]["usage"]["size"]
+        data["used-bytes"]      += device_map[ring_f][ip]["usage"]["used"]
+        data["free-bytes"]      += device_map[ring_f][ip]["usage"]["avail"]
+
+        if data["maxnodesize"] < device_map[ring_f][ip]["usage"]["size"]:
+            data["maxnodesize"] = device_map[ring_f][ip]["usage"]["size"]
+        
+    data["used-percent"] = float("{0:.2f}".format(float(data["used-bytes"]) * 100 / data["total-bytes"]))
+
+    ## Get replicas
+    data['replicas'] = int(float(os.popen("swift-ring-builder " + SWIFT_DIR + "/" + ring_f + "  | grep 'replicas' | awk '{ print $3 }'").read().strip()))
+    
+    result.append(data)
+
+if __name__ == '__main__':
+    if args.role == 'object':
+        get_swift_ring()
+
+        for ring_file in ring_map:
+            get_swift_devices(ring_file)
+            check_usage_api(ring_file)
+
+            data = {}
+            data["policy-name"]     = ring_map[ring_file]["name"]
+            set_data(ring_file)
+
+    else:
+        ring_file = args.role + ".ring.gz"
+        get_swift_devices(ring_file)
+        check_usage_api(ring_file)
+
+        data = {}
+        data["name"] = 'swift-usage'
+        set_data(ring_file)
+        
+    print json.dumps(result)
