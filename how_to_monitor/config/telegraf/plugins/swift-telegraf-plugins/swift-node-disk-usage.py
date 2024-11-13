@@ -19,7 +19,7 @@ SRV_REPLICATION_ADDR = None
 SWIFT_DIR            = "/etc/swift"
 SWIFT_CONFIG         = os.path.join(SWIFT_DIR, "swift.conf")
 SWIFT_OBJECT_RINGS   = [f for f in os.listdir(SWIFT_DIR) if re.match(r'object(|\-[0-9])\.ring\.gz', f)]
-SWIFT_RECON_DISK     = 'http://%s:6200/recon/diskusage'
+SWIFT_RECON_DISK     = 'http://%s:6100/recon/diskusage'
 
 swconfig = configparser.ConfigParser()
 swconfig.read(SWIFT_CONFIG)
